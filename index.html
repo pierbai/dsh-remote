@@ -586,8 +586,10 @@ function onBridgeMsg(d) {
         $("sessTitle").querySelector(".t1").textContent = title;
       }
     } else if (d.ok === false) {
+      const msg = d.error || "request failed";
+      if (/not paired/i.test(msg)) { unpair(); return; }   // stale pairToken: re-pair
       setBusy(false);
-      addErr(d.error || "request failed");
+      addErr(msg);
       if (pending && d.id === pending.id) pending = null;
     }
     return;
@@ -651,6 +653,35 @@ function handleDshEvent(ev) {
   }
 }
 
+/* validate the stored pairToken on boot; a stale one goes straight back
+   to the pairing screen instead of a broken chat */
+async function verifyPairing() {
+  if (!store.pairToken) return false;
+  const nonce = crypto.getRandomValues(new Uint8Array(16)).reduce(
+    (s, b) => s + b.toString(16).padStart(2, "0"), "");
+  const pairCh = `dsh-ios-pair-${nonce}`;
+  const id = "req-" + crypto.randomUUID();
+  ablyCred = () => "Basic " + btoa(ABLY_KEY);   // master key for the round-trip
+  let resp = null;
+  try {
+    const r = await ablyPublish({ id, kind: "ping", pairToken: store.pairToken, nonce });
+    if (r.ok) resp = await pollChannelFor(pairCh, m => m.id === id, 15000);
+  } catch (e) { /* network trouble: keep stored pairing, try chat anyway */ }
+  if (resp && resp.ok === false) {
+    // bridge explicitly refused: clear stale pairing so the user re-enters the PIN
+    store.pairToken = ""; store.ablyToken = ""; store.respChannel = "";
+    return false;
+  }
+  if (resp && resp.ok && resp.ablyToken) {   // fresh restricted token from the bridge
+    store.ablyToken = resp.ablyToken;
+    if (resp.respChannel) { store.respChannel = resp.respChannel; }
+    ablyCred = () => "Bearer " + store.ablyToken;
+  } else if (store.ablyToken) {
+    ablyCred = () => "Bearer " + store.ablyToken;
+  }
+  return true;
+}
+
 /* ================= boot ================= */
 function enterChat() {
   $("pair").style.display = "none";
@@ -685,8 +716,13 @@ $("sessBtn").onclick = showSheet;
 $("newSessBtn").onclick = newSession;
 $("sheetBk").onclick = hideSheet;
 
-// auto-enter if already paired
-if (store.pairToken) enterChat();
+// auto-enter if already paired (validated against the bridge first)
+(async () => {
+  if (!store.pairToken) return;
+  const ok = await verifyPairing();
+  if (ok) enterChat();
+  else $("pair").style.display = "flex";
+})();
 
 // iOS suspends timers when backgrounded/locked; on return to the foreground
 // the poll loop restarts from Ably history (24h retention), so missed events
