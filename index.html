@@ -526,16 +526,40 @@ function armPendingWatchdog() {
   pendingTimer = setInterval(() => {
     if (!busy || !pending) { disarmPendingWatchdog(); return; }
     const idle = Date.now() - pendingSince;
-    const TASK_LIMIT = 16 * 60 * 1000;   // bridge kills tasks at 15min
-    if (idle > TASK_LIMIT) {
-      // the bridge already gave up; recover the UI
+    // no bridge frames for 3 minutes: the task either finished while we
+    // couldn't poll (iOS suspended the page) or its events were lost.
+    // Ably history keeps them, so first try one direct catch-up scan.
+    catchUpPending();
+    if (Date.now() - pendingSince > 16 * 60 * 1000) {
       finishLiveMsg();
       setBusy(false);
-      addErr("任务超时或事件流中断(超过 16 分钟无活动)。若 ZBook 仍在处理,结果不会同步显示。");
+      addErr("任务超时或事件流中断(超过 16 分钟无活动)。");
       pending = null;
       disarmPendingWatchdog();
     }
   }, 30 * 1000);
+}
+async function catchUpPending() {
+  // one explicit history scan for a final/error frame of the pending task
+  if (!pending) return;
+  try {
+    const ch = CH_RESP || store.respChannel;
+    if (!ch) return;
+    const q = new URLSearchParams({ limit: "100", direction: "backwards" });
+    const r = await ablyRest("GET", `/channels/${ch}/messages?${q}`);
+    if (r.ok && Array.isArray(r.json)) {
+      for (const m of r.json) {
+        let d; try { d = JSON.parse(m.data); } catch (e) { continue; }
+        if (d && d.id === pending.id) {
+          if (d.evt === "dsh" && d.d && d.d.type === "final") {
+            onBridgeMsg(d);
+            return;
+          }
+          if (d.evt === "error") { onBridgeMsg(d); return; }
+        }
+      }
+    }
+  } catch (e) { /* next watchdog tick retries */ }
 }
 function disarmPendingWatchdog() {
   if (pendingTimer) { clearInterval(pendingTimer); pendingTimer = null; }
@@ -589,7 +613,11 @@ function onBridgeMsg(d) {
       const msg = d.error || "request failed";
       if (/not paired/i.test(msg)) { unpair(); return; }   // stale pairToken: re-pair
       setBusy(false);
-      addErr(msg);
+      if (/already running/i.test(msg)) {
+        addErr("该会话上已有任务在运行(可能是之前卡住的任务)。稍等片刻或发送新消息重试;超过 16 分钟桥会自动清理。");
+      } else {
+        addErr(msg);
+      }
       if (pending && d.id === pending.id) pending = null;
     }
     return;
