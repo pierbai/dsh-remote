@@ -435,18 +435,30 @@ async function refreshToken() {
     (s, b) => s + b.toString(16).padStart(2, "0"), "");
   const pairCh = `dsh-ios-pair-${nonce}`;
   const id = "req-" + crypto.randomUUID();
-  const savedCred = ablyCred;
-  ablyCred = () => "Basic " + btoa(ABLY_KEY);   // master key for the refresh round-trip
+  // the whole refresh round-trip runs on the master key: the current
+  // restricted token may be expired, and the reply lands on the nonce
+  // channel which the key can read anyway.
+  ablyCred = () => "Basic " + btoa(ABLY_KEY);
   const r = await ablyPublish({ id, kind: "refresh", pairToken: store.pairToken, nonce });
-  ablyCred = savedCred;
-  if (!r.ok) { scheduleRefresh(5 * 60 * 1000); return; }  // retry in 5min
+  if (!r.ok) {
+    ablyCred = () => store.ablyToken ? "Bearer " + store.ablyToken : ablyCred;
+    scheduleRefresh(5 * 60 * 1000); return;  // retry in 5min
+  }
   const resp = await pollChannelFor(pairCh, m => m.id === id, 20000);
   if (resp && resp.ok && resp.ablyToken) {
     store.ablyToken = resp.ablyToken;
     ablyCred = () => "Bearer " + store.ablyToken;
     if (resp.respChannel) { store.respChannel = resp.respChannel; CH_RESP = resp.respChannel; }
+    authFailures = 0;
+    scheduleRefresh();
+  } else if (resp && resp.ok === false) {
+    if (resp.relogin) { unpair(); return; }   // pairToken rejected: re-pair
+    ablyCred = () => "Bearer " + store.ablyToken;
+    scheduleRefresh(5 * 60 * 1000);
+  } else {
+    ablyCred = () => "Bearer " + store.ablyToken;
+    scheduleRefresh(5 * 60 * 1000);   // no reply; retry soon
   }
-  scheduleRefresh();
 }
 function scheduleRefresh(delayMs = 45 * 60 * 1000) {
   if (refreshTimer) clearTimeout(refreshTimer);
