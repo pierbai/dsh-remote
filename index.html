@@ -133,6 +133,7 @@
         <div class="t1">DSH</div>
         <div class="t2" id="sessSub">未连接</div>
       </div>
+      <button id="tasksBtn">任务</button>
       <button id="sessBtn">会话</button>
     </header>
     <div id="msgs"></div>
@@ -147,8 +148,9 @@
   <!-- sessions sheet -->
   <div id="sheetBk"></div>
   <div id="sheet">
-    <h3>会话</h3>
+    <h3 id="sheetTitle">会话</h3>
     <div id="sessList"></div>
+    <div id="taskList"></div>
     <button class="newSess" id="newSessBtn">＋ 新会话</button>
   </div>
 </div>
@@ -508,6 +510,9 @@ function addSystemNote(text) {
   addMsg("assistant", `<span style="color:var(--dim)">${escapeHtml(text)}</span>`);
 }
 function showSheet() {
+  fillSessionSheet();
+}
+function fillSessionSheet() {
   const list = $("sessList");
   list.innerHTML = "";
   const sorted = [...sessions].sort((a, b) => b.ts - a.ts);
@@ -521,13 +526,11 @@ function showSheet() {
       e.stopPropagation();
       sessions = sessions.filter(x => x.id !== s.id);
       if (activeSession === s.id) newSession();
-      saveSessionList(); showSheet();
+      saveSessionList(); fillSessionSheet();
     };
     row.onclick = () => switchSession(s.id);
     list.appendChild(row);
   }
-  $("sheetBk").style.display = "block";
-  $("sheet").style.display = "block";
 }
 function hideSheet() { $("sheetBk").style.display = "none"; $("sheet").style.display = "none"; }
 
@@ -559,19 +562,31 @@ async function catchUpPending() {
   if (!pending) return;
   try {
     const ch = CH_RESP || store.respChannel;
-    if (!ch) return;
-    const q = new URLSearchParams({ limit: "100", direction: "backwards" });
-    const r = await ablyRest("GET", `/channels/${ch}/messages?${q}`);
-    if (r.ok && Array.isArray(r.json)) {
-      for (const m of r.json) {
-        let d; try { d = JSON.parse(m.data); } catch (e) { continue; }
-        if (d && d.id === pending.id) {
-          if (d.evt === "dsh" && d.d && d.d.type === "final") {
-            onBridgeMsg(d);
-            return;
+    if (ch) {
+      const q = new URLSearchParams({ limit: "100", direction: "backwards" });
+      const r = await ablyRest("GET", `/channels/${ch}/messages?${q}`);
+      if (r.ok && Array.isArray(r.json)) {
+        for (const m of r.json) {
+          let d; try { d = JSON.parse(m.data); } catch (e) { continue; }
+          if (d && d.id === pending.id) {
+            if (d.evt === "dsh" && d.d && d.d.type === "final") {
+              onBridgeMsg(d); return;
+            }
+            if (d.evt === "error") { onBridgeMsg(d); return; }
           }
-          if (d.evt === "error") { onBridgeMsg(d); return; }
         }
+      }
+    }
+    // durable fallback via the bridge's disk-backed task log
+    if (pending && pending.taskId) {
+      const t = await fetchTaskLog(pending.taskId);
+      if (t && t.ok && t.status === "done" && t.final !== null) {
+        handleDshEvent({ type: "final", text: t.final });
+        return;
+      }
+      if (t && t.ok && t.status === "error") {
+        handleDshEvent({ type: "error", message: (t.events || []).slice(-1)[0]?.message || "task failed" });
+        return;
       }
     }
   } catch (e) { /* next watchdog tick retries */ }
@@ -611,12 +626,51 @@ async function sendPrompt() {
     addErr("发送失败: HTTP " + r.status);
     return;
   }
+  // long tasks survive on the ZBook even if this page dies; remember it
+}
+
+/* task list: query the bridge for durable task states (disk-backed,
+   independent of Ably history retention) */
+const replyWaiters = {};   // reqId -> {resolve, timer}
+function waitReply(reqId, timeoutMs = 20000) {
+  return new Promise(resolve => {
+    replyWaiters[reqId] = { resolve };
+    setTimeout(() => { if (replyWaiters[reqId]) { delete replyWaiters[reqId]; resolve(null); } }, timeoutMs);
+  });
+}
+async function fetchTaskList() {
+  const id = "req-" + crypto.randomUUID();
+  const p = waitReply(id);
+  const r = await ablyPublish({ id, kind: "tasks", pairToken: store.pairToken });
+  if (!r.ok) { addErr("任务列表拉取失败: HTTP " + r.status); return null; }
+  const resp = await p;
+  return resp && resp.ok ? resp.tasks : null;
+}
+async function fetchTaskLog(taskId) {
+  const id = "req-" + crypto.randomUUID();
+  const p = waitReply(id);
+  const r = await ablyPublish({ id, kind: "tasklog", pairToken: store.pairToken, taskId });
+  if (!r.ok) return null;
+  return await p;
 }
 
 /* event handler for messages from bridge */
 function onBridgeMsg(d) {
+  // reply to task-list/tasklog queries
+  if (d.ok !== undefined && replyWaiters[d.id]) {
+    const w = replyWaiters[d.id];
+    delete replyWaiters[d.id];
+    w.resolve(d);
+    return;
+  }
   // ack / error envelope (has .ok) for any request id we track
   if (d.ok !== undefined) {
+    if (d.ok === true && d.taskId && pending && d.id === pending.id) {
+      pending.taskId = d.taskId; savePendingTask();
+      if (d.sessionId && !activeSession) {
+        activeSession = d.sessionId; store.active = d.sessionId;
+      }
+    }
     if (d.ok === true && d.sessionId && pending && d.id === pending.id) {
       // prompt accepted; adopt session id if this is a new session
       if (!activeSession) {
@@ -734,29 +788,45 @@ async function resumePendingTask() {
   const saved = taskStore.pending;
   if (!saved || !saved.id) return;
   const ch = CH_RESP || store.respChannel;
-  if (!ch) return;
   // re-render the user's prompt bubble and mark busy
   addUserMsg(saved.prompt);
   pending = { id: saved.id, prompt: saved.prompt };
   if (saved.sid) { activeSession = saved.sid; store.active = saved.sid; }
   setBusy(true);
   let finished = false;
-  try {
-    // scan enough history: heartbeats are 30s apart, tasks span <= 16 min
-    const q = new URLSearchParams({ limit: "100", direction: "backwards" });
-    const r = await ablyRest("GET", `/channels/${ch}/messages?${q}`);
-    if (r.ok && Array.isArray(r.json)) {
-      const frames = r.json.slice().reverse()
-        .map(m => { try { return JSON.parse(m.data); } catch (e) { return null; } })
-        .filter(d => d && d.id === saved.id);
-      for (const d of frames) {
-        if (d.evt === "dsh") { handleDshEvent(d.d); if (!pending) { finished = true; break; } }
-        else if (d.evt === "error") { addErr(d.message || "error"); finished = true; break; }
+
+  // 1) try Ably channel history first (fast path, recent events)
+  if (ch) {
+    try {
+      const q = new URLSearchParams({ limit: "100", direction: "backwards" });
+      const r = await ablyRest("GET", `/channels/${ch}/messages?${q}`);
+      if (r.ok && Array.isArray(r.json)) {
+        const frames = r.json.slice().reverse()
+          .map(m => { try { return JSON.parse(m.data); } catch (e) { return null; } })
+          .filter(d => d && d.id === saved.id);
+        for (const d of frames) {
+          if (d.evt === "dsh") { handleDshEvent(d.d); if (!pending) { finished = true; break; } }
+          else if (d.evt === "error") { addErr(d.message || "error"); finished = true; break; }
+        }
       }
-    }
-  } catch (e) { /* stay busy; the watchdog keeps retrying via catchUpPending */ }
+    } catch (e) { /* fall through to disk */ }
+  }
+
+  // 2) durable fallback: the bridge's disk-backed task log (survives Ably
+  //    history expiry and even a bridge restart)
+  if (!finished && pending && pending.taskId) {
+    try {
+      const t = await fetchTaskLog(pending.taskId);
+      if (t && t.ok) {
+        for (const ev of (t.events || [])) {
+          handleDshEvent(ev);
+          if (!pending) { finished = true; break; }
+        }
+      }
+    } catch (e) { /* keep waiting */ }
+  }
+
   if (!finished && pending) {
-    // events may still be flowing in; keep the live message open
     ensureLiveMsg();
     touchPending();
   }
@@ -795,6 +865,59 @@ $("promptInput").addEventListener("input", e => {
 $("sessBtn").onclick = showSheet;
 $("newSessBtn").onclick = newSession;
 $("sheetBk").onclick = hideSheet;
+$("tasksBtn").onclick = showTasks;
+
+async function showTasks() {
+  $("sheetBk").style.display = "block";
+  $("sheet").style.display = "block";
+  $("sessList").innerHTML = "";
+  $("newSessBtn").style.display = "none";
+  $("sheetTitle").textContent = "任务 (ZBook 磁盘记录)";
+  const list = $("taskList");
+  list.innerHTML = '<div style="color:var(--dim);padding:8px 18px">加载中…</div>';
+  const tasks = await fetchTaskList();
+  if (!tasks) { list.innerHTML = '<div class="errbox" style="margin:10px 18px">拉取失败</div>'; return; }
+  if (!tasks.length) { list.innerHTML = '<div style="color:var(--dim);padding:8px 18px">还没有任务</div>'; return; }
+  list.innerHTML = "";
+  for (const t of tasks) {
+    const row = document.createElement("div");
+    row.className = "sess";
+    const badge = t.status === "done" ? "✅" : (t.status === "error" ? "❌" : "⏳");
+    const time = t.startedAt ? new Date(t.startedAt * 1000).toLocaleString() : "";
+    row.innerHTML = `<div class="info"><div class="name">${badge} ${escapeHtml(t.prompt || t.taskId)}</div>
+      <div class="sub">${time} · ${t.status}</div></div>`;
+    if (t.status === "done" && t.final) {
+      row.onclick = () => {
+        hideSheet();
+        addSystemNote(`任务结果(${time}):`);
+        addMsg("assistant", mdLite(t.final));
+      };
+    } else if (t.status === "running") {
+      row.onclick = async () => {
+        hideSheet();
+        // adopt this running task into the live view
+        pending = { id: "adopted-" + t.taskId, prompt: t.prompt, taskId: t.taskId };
+        addUserMsg(t.prompt || "(任务)");
+        setBusy(true);
+        const log = await fetchTaskLog(t.taskId);
+        if (log && log.ok) {
+          for (const ev of (log.events || [])) { handleDshEvent(ev); if (!pending) break; }
+        }
+        if (pending) { ensureLiveMsg(); touchPending(); }
+      };
+    }
+    list.appendChild(row);
+  }
+}
+// restore the sessions sheet content when opened via the sessions button
+function showSheet() {
+  $("taskList").innerHTML = "";
+  $("newSessBtn").style.display = "block";
+  $("sheetTitle").textContent = "会话";
+  fillSessionSheet();
+  $("sheetBk").style.display = "block";
+  $("sheet").style.display = "block";
+}
 
 // auto-enter if already paired (validated against the bridge first)
 (async () => {
