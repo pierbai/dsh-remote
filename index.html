@@ -262,6 +262,17 @@ let liveThinking = "";               // current streaming thinking text
 let liveText = "";                    // current streaming text
 let liveEl = null;                    // in-progress message element
 
+/* survive iOS page recycling: persist the in-flight task so a reloaded
+   page can adopt it again and finish it from Ably history */
+const taskStore = {
+  get pending() { try { return JSON.parse(localStorage.getItem("dsh_task") || "null"); } catch (e) { return null; } },
+  set pending(v) { v ? localStorage.setItem("dsh_task", JSON.stringify(v)) : localStorage.removeItem("dsh_task"); },
+};
+function savePendingTask() {
+  if (pending) taskStore.pending = { ...pending, sid: activeSession };
+  else taskStore.pending = null;
+}
+
 const $ = (id) => document.getElementById(id);
 
 /* ================= ui helpers ================= */
@@ -478,12 +489,16 @@ function saveSessionList() {
 function newSession() {
   activeSession = "";
   store.active = "";
+  pending = null; savePendingTask();
+  busy = false;
   $("msgs").innerHTML = "";
   $("sessTitle").querySelector(".t1").textContent = "新会话";
   hideSheet();
 }
 function switchSession(id) {
   activeSession = id; store.active = id;
+  pending = null; savePendingTask();
+  busy = false;
   $("msgs").innerHTML = "";
   $("sessTitle").querySelector(".t1").textContent = sessTitle(id);
   hideSheet();
@@ -570,6 +585,7 @@ function setBusy(v) {
   $("sendBtn").disabled = v;
   setStatus(true);
   if (v) armPendingWatchdog(); else disarmPendingWatchdog();
+  savePendingTask();
 }
 async function sendPrompt() {
   if (busy) return;
@@ -584,6 +600,7 @@ async function sendPrompt() {
   const isNew = !sid;
   const id = "req-" + crypto.randomUUID();
   pending = { id, prompt: text };
+  savePendingTask();
   const payload = {
     id, kind: "prompt", pairToken: store.pairToken,
     prompt: text, sessionId: sid || undefined,
@@ -627,7 +644,7 @@ function onBridgeMsg(d) {
     if (d.evt === "error") {
       setBusy(false);
       addErr(d.message || "unknown error");
-      pending = null; return;
+      pending = null; savePendingTask(); return;
     }
     if (d.evt === "dsh") handleDshEvent(d.d);
   }
@@ -672,12 +689,12 @@ function handleDshEvent(ev) {
     if (ev.text && !liveText) liveText = ev.text;
     finishLiveMsg();
     setBusy(false);
-    pending = null;
+    pending = null; savePendingTask();
   } else if (t === "error") {
     addErr(ev.message || "error");
     finishLiveMsg();
     setBusy(false);
-    pending = null;
+    pending = null; savePendingTask();
   }
 }
 
@@ -711,6 +728,40 @@ async function verifyPairing() {
 }
 
 /* ================= boot ================= */
+/* after iOS recycles the page mid-task, restore the in-flight task from
+   localStorage and replay its events from Ably history (24h retention) */
+async function resumePendingTask() {
+  const saved = taskStore.pending;
+  if (!saved || !saved.id) return;
+  const ch = CH_RESP || store.respChannel;
+  if (!ch) return;
+  // re-render the user's prompt bubble and mark busy
+  addUserMsg(saved.prompt);
+  pending = { id: saved.id, prompt: saved.prompt };
+  if (saved.sid) { activeSession = saved.sid; store.active = saved.sid; }
+  setBusy(true);
+  let finished = false;
+  try {
+    // scan enough history: heartbeats are 30s apart, tasks span <= 16 min
+    const q = new URLSearchParams({ limit: "100", direction: "backwards" });
+    const r = await ablyRest("GET", `/channels/${ch}/messages?${q}`);
+    if (r.ok && Array.isArray(r.json)) {
+      const frames = r.json.slice().reverse()
+        .map(m => { try { return JSON.parse(m.data); } catch (e) { return null; } })
+        .filter(d => d && d.id === saved.id);
+      for (const d of frames) {
+        if (d.evt === "dsh") { handleDshEvent(d.d); if (!pending) { finished = true; break; } }
+        else if (d.evt === "error") { addErr(d.message || "error"); finished = true; break; }
+      }
+    }
+  } catch (e) { /* stay busy; the watchdog keeps retrying via catchUpPending */ }
+  if (!finished && pending) {
+    // events may still be flowing in; keep the live message open
+    ensureLiveMsg();
+    touchPending();
+  }
+}
+
 function enterChat() {
   $("pair").style.display = "none";
   $("chat").style.display = "flex";
@@ -729,6 +780,7 @@ function enterChat() {
     addSystemNote("已配对。开始新对话吧");
   }
   startPolling(onBridgeMsg);
+  resumePendingTask();   // adopt any task that outlived a page recycle
 }
 $("pairBtn").onclick = doPair;
 $("pinInput").addEventListener("keydown", e => { if (e.key === "Enter") doPair(); });
