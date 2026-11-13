@@ -153,6 +153,7 @@
   <button id="pairBtn">配对</button>
   <div id="pairErr"></div>
   <div id="diag" style="font:11px/1.7 ui-monospace,monospace;color:var(--dimmer);text-align:left;margin-top:8px"></div>
+  <div style="position:fixed;bottom:8px;right:12px;font:10px ui-monospace,monospace;color:var(--dimmer);z-index:50" id="buildStamp">build 2026-11-13T11:35</div>
 </div>
 
 <!-- app shell -->
@@ -561,7 +562,7 @@ function startSync() {
       try {
         const t = await bridgeCall("tasklog", { taskId: tid }, 15000);
         if (t && t.ok) {
-          if (!live || live.taskId !== tid) return;   // stale frame
+          if (!live || live.taskId !== tid) { dlog(`STALE drop tasklog ${tid}`); return; }
           const evs = t.events || [];
           for (let i = live.evtIdx || 0; i < evs.length; i++) {
             handleDshEvent(evs[i]);
@@ -582,6 +583,7 @@ async function runSessionSync() {
     try {
       const t = await bridgeCall("tasklog", { taskId: tid }, 15000);
       if (live && live.taskId === tid && t && t.ok && t.status === "done") {
+        dlog(`fallback release ${tid} final=${(t.final || "").slice(0, 30)}`);
         live.finalText = t.final || live.text || "";
         releaseBusy();
         return;
@@ -656,6 +658,7 @@ function releaseBusy() {
 function handleDshEvent(ev) {
   if (!live) return;
   const t = ev.type;
+  dlog(`evt ${t} -> live ${live.taskId || "?"}`);
   if (t === "session") {
     if (!activeSession) { activeSession = ev.sessionId; store.active = ev.sessionId; }
   } else if (t === "thinking") {
@@ -705,8 +708,30 @@ async function sendPrompt() {
   }
   if (r.taskId) { live.taskId = r.taskId; knownTasks[r.taskId] = true; }
   if (r.sessionId && !activeSession) { activeSession = r.sessionId; store.active = r.sessionId; }
+  dlog(`prompt ack taskId=${r.taskId}`);
   startSync();   // ensure the event streamer is running for this live task
 }
+
+/* debug ring buffer: last 14 transport events, toggle with 3 taps on the
+   connection status text */
+const dbg = [];
+function dlog(s) {
+  dbg.push(`${new Date().toLocaleTimeString()} ${s}`);
+  if (dbg.length > 14) dbg.shift();
+}
+(function wireDebug() {
+  let taps = 0, t0 = 0;
+  const el = document.getElementById("connText") || document.body;
+  el.addEventListener("click", () => {
+    const now = Date.now();
+    if (now - t0 > 2000) taps = 0;
+    t0 = now; taps++;
+    if (taps >= 3) {
+      taps = 0;
+      alert(dbg.join("\n") || "(no events yet)");
+    }
+  });
+})();
 
 /* ================= pairing / refresh / boot ================= */
 /* connectivity self-test shown on the pairing screen */
