@@ -743,6 +743,14 @@ async function sendPrompt() {
     }
     return;
   }
+  if (!live) {
+    // the live turn vanished while we were talking to the bridge (e.g. a
+    // concurrent sync callback finished it): treat as completed turn
+    dlog("live vanished during send; recovering");
+    busy = false;
+    $("sendBtn").disabled = false; $("sendBtn").classList.remove("busy");
+    return;
+  }
   if (r.taskId) { live.taskId = r.taskId; knownTasks[r.taskId] = true; }
   if (r.sessionId && !activeSession) { activeSession = r.sessionId; store.active = r.sessionId; }
   if (activeSession) inConversation = true;
