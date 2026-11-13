@@ -340,6 +340,7 @@ const store = {
 };
 
 let activeSession = "";
+let inConversation = false;   // true once the user opened/started a conversation in this view; distinguishes "context lost" from "user chose new chat"
 let live = null;
 let knownTasks = {};
 let syncTimer = null;
@@ -488,6 +489,7 @@ async function loadSidebar() {
 /* ================= conversation view ================= */
 async function openSession(sid) {
   activeSession = sid;
+  inConversation = true;
   store.active = sid;
   $("topT1").textContent = "加载中…";
   $("msgs").innerHTML = `<div class="hint">加载对话历史…</div>`;
@@ -660,7 +662,10 @@ function handleDshEvent(ev) {
   const t = ev.type;
   dlog(`evt ${t} -> live ${live.taskId || "?"}`);
   if (t === "session") {
-    if (!activeSession) { activeSession = ev.sessionId; store.active = ev.sessionId; }
+    if (ev.sessionId) {
+      if (!activeSession) { activeSession = ev.sessionId; store.active = ev.sessionId; }
+      if (!live.sessionId) live.sessionId = ev.sessionId;
+    }
   } else if (t === "thinking") {
     live.thinking = (live.thinking || "") + (ev.text || "");
     updateLive();
@@ -698,7 +703,21 @@ async function sendPrompt() {
   ensureLive(); setStatus(true);
 
   const payload = { id: myReqId, kind: "prompt", prompt: text };
-  if (activeSession) payload.sessionId = activeSession;
+  // bind to the conversation: prefer the open session, else (context lost
+  // mid-conversation, e.g. after rejected prompts) the most recent one the
+  // server knows — but never override an explicit "new chat" intent
+  let sid = activeSession || store.active;
+  if (!sid && inConversation) {
+    try {
+      const list = await bridgeCall("sessions", {}, 15000);
+      if (list && list.ok && list.sessions && list.sessions.length) {
+        sid = list.sessions[0].session;   // most recent conversation
+        activeSession = sid; store.active = sid;
+        dlog(`recovered session ${sid}`);
+      }
+    } catch (e) { /* new session it is */ }
+  }
+  if (sid) payload.sessionId = sid;
   const r = await bridgeCall("prompt", payload);
   if (!r || !r.ok) {
     // remove the optimistic live bubble before showing the error
@@ -726,7 +745,8 @@ async function sendPrompt() {
   }
   if (r.taskId) { live.taskId = r.taskId; knownTasks[r.taskId] = true; }
   if (r.sessionId && !activeSession) { activeSession = r.sessionId; store.active = r.sessionId; }
-  dlog(`prompt ack taskId=${r.taskId}`);
+  if (activeSession) inConversation = true;
+  dlog(`prompt ack taskId=${r.taskId} session=${activeSession || "(new)"}`);
   startSync();   // ensure the event streamer is running for this live task
 }
 
@@ -944,6 +964,7 @@ $("newChatBtn").onclick = () => {
   openDrawer(false);
   stopSync();
   activeSession = ""; store.active = "";
+  inConversation = false;   // explicit new-chat intent: never auto-recover
   knownTasks = {};
   live = null; busy = false;
   $("msgs").innerHTML = "";
