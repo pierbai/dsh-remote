@@ -427,18 +427,28 @@ function ensureLive() {
   return live.el;
 }
 function finishLive() {
-  if (!live || !live.el) return;
-  live.el.typing.remove();
-  const text = live.finalText || live.text || "";
-  live.el.body.innerHTML = mdLite(text) || '<span style="color:var(--dim)">（无回复）</span>';
-  if (live.thinking) {
-    const t = document.createElement("div");
-    t.className = "thinking";
-    t.textContent = live.thinking;
-    live.el.wrap.insertBefore(t, live.el.body);
+  if (!live) return;
+  // DOM nodes may have been detached by a concurrent view reset; never let
+  // a rendering hiccup block the busy-state machine
+  try {
+    if (!live.el) return;
+    if (live.el.typing && live.el.typing.parentNode) live.el.typing.remove();
+    const text = live.finalText || live.text || "";
+    if (live.el.body) {
+      live.el.body.innerHTML = mdLite(text) || '<span style="color:var(--dim)">（无回复）</span>';
+      if (live.thinking && live.el.wrap && live.el.body.parentNode === live.el.wrap) {
+        const t = document.createElement("div");
+        t.className = "thinking";
+        t.textContent = live.thinking;
+        live.el.wrap.insertBefore(t, live.el.body);
+      }
+    }
+  } catch (e) {
+    dlog(`finishLive render hiccup: ${e.message}`);
+  } finally {
+    live.el = null;
+    scrollBottom();
   }
-  live.el = null;
-  scrollBottom();
 }
 function updateLive() {
   const el = ensureLive();
@@ -566,10 +576,14 @@ function startSync() {
         if (t && t.ok) {
           if (!live || live.taskId !== tid) { dlog(`STALE drop tasklog ${tid}`); return; }
           const evs = t.events || [];
-          for (let i = live.evtIdx || 0; i < evs.length; i++) {
+          const from = live.evtIdx || 0;
+          // advance the cursor FIRST: handleDshEvent(final) releases live to
+          // null mid-loop, and the cursor must survive that
+          live.evtIdx = evs.length;
+          for (let i = from; i < evs.length; i++) {
+            if (!live || live.taskId !== tid) break;   // turn finished/replaced
             handleDshEvent(evs[i]);
           }
-          if (live) live.evtIdx = evs.length;
         }
       } catch (e) { /* next tick */ }
     }, 2000);
@@ -606,21 +620,26 @@ async function runSessionSync() {
       knownTasks[f.taskId] = true;
       if (live && live.taskId === f.taskId) {
         live.finalText = f.final || live.text;
-        finishLive();
-        busy = false; live = null;
-        $("sendBtn").disabled = false; $("sendBtn").classList.remove("busy");
+        releaseBusy();
       }
     }
     if (!r.running && busy) {
-      const full = await bridgeCall("session_events", { sessionId: activeSession }, 60000);
-      if (full && full.ok) {
-        const last = full.turns[full.turns.length - 1];
-        if (last && last.status !== "running") {
-          if (live) { live.finalText = last.final || live.text; finishLive(); live = null; }
-          busy = false;
-          $("sendBtn").disabled = false; $("sendBtn").classList.remove("busy");
+      // The session view says nothing is running. Only finalize when the
+      // live task ITSELF is terminal — a just-sent prompt's worker may not
+      // have registered in the session view yet, and killing it here would
+      // strand the turn ("live vanished during send").
+      if (live && live.taskId) {
+        const tidNow = live.taskId;
+        const t2 = await bridgeCall("tasklog", { taskId: tidNow }, 15000);
+        if (live && live.taskId === tidNow && t2 && t2.ok && t2.status === "done") {
+          live.finalText = t2.final || live.text || "";
+          releaseBusy();
         }
+        // otherwise the live task is genuinely still running per its own
+        // status; the session view just lags. Do nothing.
       }
+      // live without a taskId: brand-new prompt mid-registration — never
+      // touch it from here.
     }
   } catch (e) { /* next tick */ }
 }
@@ -650,12 +669,15 @@ function onFrame(d) {
   }
 }
 function releaseBusy() {
-  if (live) { live.finalText = live.finalText || live.text; finishLive(); live = null; }
-  busy = false;
-  $("sendBtn").disabled = false;
-  $("sendBtn").classList.remove("busy");
-  setStatus(true);
-  loadSidebar();
+  try { if (live) { live.finalText = live.finalText || live.text; finishLive(); } }
+  catch (e) { dlog(`releaseBusy render error: ${e.message}`); }
+  finally { live = null; busy = false; }
+  try {
+    $("sendBtn").disabled = false;
+    $("sendBtn").classList.remove("busy");
+    setStatus(true);
+    loadSidebar();
+  } catch (e) { /* never block the state machine on UI glitches */ }
 }
 function handleDshEvent(ev) {
   if (!live) return;
