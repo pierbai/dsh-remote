@@ -701,9 +701,27 @@ async function sendPrompt() {
   if (activeSession) payload.sessionId = activeSession;
   const r = await bridgeCall("prompt", payload);
   if (!r || !r.ok) {
-    addErr((r && r.error) || "发送失败");
-    finishLive(); live = null; busy = false;
+    // remove the optimistic live bubble before showing the error
+    if (live && live.el) { live.el.wrap.remove(); }
+    live = null; busy = false;
     $("sendBtn").disabled = false; $("sendBtn").classList.remove("busy");
+    if (r && /already running/i.test(r.error || "")) {
+      // adopt the running task instead of leaving a dead end
+      const tid = r.taskId;
+      if (tid) {
+        live = { taskId: tid, prompt: text, thinking: "", text: "", finalText: null, el: null };
+        knownTasks[tid] = true;
+        ensureLive(); setStatus(true);
+        addErr("该会话上已有任务在运行,已为你挂载它的进度");
+        dlog(`adopted running task ${tid}`);
+        startSync();
+        return;
+      }
+      addErr("该会话上已有任务在运行,请等它完成(几秒后自动恢复)");
+      dlog(`prompt rejected: ${r.error}`);
+    } else {
+      addErr((r && r.error) || "发送失败");
+    }
     return;
   }
   if (r.taskId) { live.taskId = r.taskId; knownTasks[r.taskId] = true; }
