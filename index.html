@@ -6,76 +6,89 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="DSH">
-<meta name="theme-color" content="#151517">
-<title>DSH Remote</title>
+<meta name="theme-color" content="#0f0f10">
+<title>DSH</title>
 <style>
   :root{
-    --bg:#101012; --panel:#1a1a1e; --panel2:#222228; --line:#2c2c34;
-    --fg:#e8e8ec; --dim:#8b8b96; --accent:#4f6ef7; --accent2:#7b93ff;
-    --user:#2b4bd6; --ok:#34c77b; --err:#e5534b; --warn:#e8a33d;
-    --radius:14px; --safe-b:env(safe-area-inset-bottom,0px);
+    --bg:#0f0f10; --sidebar:#151517; --panel:#1b1b1f; --panel2:#232329; --line:#2a2a31;
+    --fg:#ececf1; --dim:#8e8e99; --dimmer:#5d5d66;
+    --accent:#4f6ef7; --accent2:#8a9dff; --user:#3b5bdb;
+    --ok:#34c77b; --err:#e5534b; --warn:#e8a33d;
+    --radius:12px; --safe-b:env(safe-area-inset-bottom,0px);
     --safe-t:env(safe-area-inset-top,0px);
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
   html,body{margin:0; height:100%; background:var(--bg); color:var(--fg);
     font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Segoe UI",sans-serif;
     font-size:16px; overscroll-behavior:none}
-  #app{display:flex; flex-direction:column; height:100%; max-width:820px; margin:0 auto}
 
-  /* ---- pairing ---- */
-  #pair{display:flex; flex-direction:column; justify-content:center; gap:18px;
-    padding:32px 28px; height:100%}
-  #pair h1{font-size:26px; margin:0; text-align:center}
-  #pair p.sub{color:var(--dim); text-align:center; margin:0 0 8px}
-  #pair input{background:var(--panel); border:1px solid var(--line); color:var(--fg);
-    border-radius:12px; padding:14px 16px; font-size:22px; text-align:center;
-    letter-spacing:8px; outline:none}
-  #pair input:focus{border-color:var(--accent)}
-  #pair button{background:var(--accent); color:#fff; border:none; border-radius:12px;
-    padding:14px; font-size:17px; font-weight:600}
-  #pair button:active{opacity:.8}
-  #pairErr{color:var(--err); text-align:center; min-height:20px; font-size:14px}
+  /* ===== app shell: sidebar + main ===== */
+  #shell{display:flex; height:100%; max-width:1400px; margin:0 auto}
 
-  /* ---- chat ---- */
-  #chat{display:none; flex-direction:column; height:100%}
-  header{display:flex; align-items:center; gap:10px; padding:calc(var(--safe-t) + 8px) 12px 8px;
-    border-bottom:1px solid var(--line); background:var(--bg); position:sticky; top:0; z-index:5}
-  header .title{flex:1; min-width:0}
-  header .title .t1{font-weight:700; font-size:16px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
-  header .title .t2{font-size:11.5px; color:var(--dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
-  header button{background:var(--panel); border:1px solid var(--line); color:var(--fg);
-    border-radius:10px; padding:8px 11px; font-size:13px}
-  #statusDot{width:9px; height:9px; border-radius:50%; background:var(--err); flex:none; transition:background .3s}
-  #statusDot.ok{background:var(--ok)}
+  /* ---- sidebar (conversation list, DSH style) ---- */
+  #sidebar{width:280px; flex:none; background:var(--sidebar);
+    border-right:1px solid var(--line); display:flex; flex-direction:column}
+  #sbHead{padding:calc(var(--safe-t) + 14px) 14px 10px}
+  #sbHead .brand{display:flex; align-items:center; gap:8px; font-weight:700; font-size:17px}
+  #sbHead .brand .logo{width:26px; height:26px; border-radius:7px;
+    background:linear-gradient(135deg,#4f6ef7,#7b3ff7); display:flex; align-items:center;
+    justify-content:center; font-size:14px; color:#fff}
+  #newChatBtn{margin-top:12px; width:100%; background:var(--panel); color:var(--fg);
+    border:1px solid var(--line); border-radius:10px; padding:10px; font-size:14.5px;
+    display:flex; align-items:center; justify-content:center; gap:6px; font-family:inherit}
+  #newChatBtn:active{background:var(--panel2)}
+  #sbList{flex:1; overflow-y:auto; padding:4px 8px calc(12px + var(--safe-b))}
+  .convItem{padding:10px 12px; border-radius:10px; margin:2px 0; cursor:pointer;
+    display:flex; flex-direction:column; gap:3px}
+  .convItem:active, .convItem.active{background:var(--panel2)}
+  .convItem .cTitle{font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--fg)}
+  .convItem .cSub{font-size:11.5px; color:var(--dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    display:flex; align-items:center; gap:6px}
+  .dotRun{width:7px; height:7px; border-radius:50%; background:var(--warn); flex:none;
+    animation:pulse 1.5s infinite}
+  .dotOk{width:7px; height:7px; border-radius:50%; background:var(--ok); flex:none; opacity:.7}
+  @keyframes pulse{0%,100%{opacity:1} 50%{opacity:.35}}
 
-  #msgs{flex:1; overflow-y:auto; padding:14px 12px calc(10px + var(--safe-b));
-    -webkit-overflow-scrolling:touch}
-  .msg{margin:10px 0; display:flex; flex-direction:column; max-width:92%}
+  /* ---- main ---- */
+  #main{flex:1; display:flex; flex-direction:column; min-width:0; height:100%}
+  #topbar{display:flex; align-items:center; gap:10px; padding:calc(var(--safe-t) + 10px) 14px 10px;
+    border-bottom:1px solid var(--line); background:var(--bg); min-height:52px}
+  #menuBtn{display:none; background:none; border:none; color:var(--fg); font-size:20px;
+    padding:4px 8px; border-radius:8px}
+  #topTitle{flex:1; min-width:0}
+  #topTitle .t1{font-weight:600; font-size:15px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  #topConn{font-size:11.5px; color:var(--dim); display:flex; align-items:center; gap:6px}
+  #topDot{width:8px; height:8px; border-radius:50%; background:var(--err); flex:none}
+  #topDot.ok{background:var(--ok)}
+
+  #msgs{flex:1; overflow-y:auto; padding:16px 16px calc(12px + var(--safe-b));
+    -webkit-overflow-scrolling:touch; scroll-behavior:smooth}
+  .msg{margin:12px 0; display:flex; flex-direction:column; max-width:min(92%,720px)}
   .msg.user{align-self:flex-end; align-items:flex-end; margin-left:auto}
-  .msg .bubble{border-radius:var(--radius); padding:11px 14px; line-height:1.55;
-    word-break:break-word; font-size:15.5px}
+  .msg .bubble{border-radius:var(--radius); padding:12px 15px; line-height:1.6;
+    word-break:break-word; font-size:15px}
   .msg.user .bubble{background:var(--user); color:#fff; border-bottom-right-radius:4px}
   .msg.assistant .bubble{background:var(--panel); border:1px solid var(--line);
     border-bottom-left-radius:4px}
-  .msg .thinking{color:var(--dim); font-size:13px; border-left:3px solid var(--line);
-    padding:2px 10px; margin:6px 0; white-space:pre-wrap; max-height:150px; overflow-y:auto}
-  .msg .meta{font-size:11px; color:var(--dim); margin:3px 2px}
-  .msg .tools{font-size:12.5px; color:var(--warn); background:rgba(232,163,61,.08);
-    border:1px solid rgba(232,163,61,.25); border-radius:8px; padding:6px 10px;
+  .msg .thinking{color:var(--dim); font-size:12.5px; border-left:2px solid var(--line);
+    padding:2px 10px; margin:6px 0; white-space:pre-wrap; max-height:140px; overflow-y:auto}
+  .msg .meta{font-size:11px; color:var(--dimmer); margin:3px 2px}
+  .msg .tools{font-size:12px; color:var(--warn); background:rgba(232,163,61,.07);
+    border:1px solid rgba(232,163,61,.2); border-radius:8px; padding:5px 10px;
     margin:4px 0; font-family:ui-monospace,Menlo,monospace; word-break:break-all}
-  .turnSep{display:flex; align-items:center; gap:10px; margin:18px 0 8px;
-    color:var(--dim); font-size:11px}
+  .turnSep{display:flex; align-items:center; gap:10px; margin:22px 0 10px;
+    color:var(--dimmer); font-size:10.5px}
   .turnSep::before,.turnSep::after{content:""; flex:1; height:1px; background:var(--line)}
   .errbox{color:var(--err); background:rgba(229,83,75,.08); border:1px solid rgba(229,83,75,.3);
     border-radius:10px; padding:10px 12px; margin:10px 0; font-size:14px}
   .bubble code{font-family:ui-monospace,Menlo,monospace; font-size:13.5px;
     background:var(--panel2); padding:1px 5px; border-radius:5px}
   .bubble pre{background:var(--panel2); border:1px solid var(--line); border-radius:10px;
-    padding:10px; overflow-x:auto; margin:8px 0; white-space:pre}
+    padding:11px; overflow-x:auto; margin:8px 0; white-space:pre}
   .bubble pre code{background:none; padding:0}
   .bubble h2,.bubble h3,.bubble h4,.bubble h5{margin:10px 0 4px; line-height:1.3}
-  .bubble h2{font-size:17px} .bubble h3{font-size:15.5px}
-  .bubble h4,.bubble h5{font-size:14.5px}
+  .bubble h2{font-size:16.5px} .bubble h3{font-size:15px}
+  .bubble h4,.bubble h5{font-size:14px}
   .bubble ul,.bubble ol{margin:6px 0; padding-left:22px}
   .bubble li{margin:3px 0}
   .bubble a{color:var(--accent2)}
@@ -87,81 +100,120 @@
   .typing i{width:6px; height:6px; border-radius:50%; background:var(--dim); animation:blink 1.2s infinite}
   .typing i:nth-child(2){animation-delay:.2s} .typing i:nth-child(3){animation-delay:.4s}
   @keyframes blink{0%,80%,100%{opacity:.25} 40%{opacity:1}}
+  .hint{color:var(--dimmer); text-align:center; padding:40px 20px; font-size:14px}
 
-  footer{border-top:1px solid var(--line); background:var(--bg);
-    padding:8px 10px calc(10px + var(--safe-b))}
-  #inputRow{display:flex; gap:8px; align-items:flex-end}
+  #composer{border-top:1px solid var(--line); background:var(--bg);
+    padding:10px 14px calc(12px + var(--safe-b))}
+  #inputRow{display:flex; gap:10px; align-items:flex-end; max-width:760px; margin:0 auto}
   #promptInput{flex:1; background:var(--panel); border:1px solid var(--line); color:var(--fg);
-    border-radius:20px; padding:11px 16px; font-size:16px; outline:none; resize:none;
-    max-height:120px; font-family:inherit; line-height:1.4}
+    border-radius:22px; padding:11px 17px; font-size:16px; outline:none; resize:none;
+    max-height:140px; font-family:inherit; line-height:1.45}
   #promptInput:focus{border-color:var(--accent)}
   #sendBtn{background:var(--accent); border:none; color:#fff; width:42px; height:42px;
-    border-radius:50%; font-size:19px; flex:none; display:flex; align-items:center; justify-content:center}
-  #sendBtn:disabled{opacity:.4}
+    border-radius:50%; font-size:18px; flex:none; display:flex; align-items:center;
+    justify-content:center; transition:background .2s}
+  #sendBtn:disabled{opacity:.35}
   #sendBtn.busy{background:var(--err)}
 
-  /* sheet */
-  #sheetBk{display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:20}
-  #sheet{position:fixed; left:0; right:0; bottom:0; background:var(--panel);
-    border-radius:18px 18px 0 0; z-index:21; padding:10px 0 calc(14px + var(--safe-b));
-    display:none; max-height:70%; overflow-y:auto}
-  #sheet h3{margin:6px 18px 10px; font-size:15px; color:var(--dim)}
-  .sess{display:flex; align-items:center; gap:10px; padding:12px 18px}
-  .sess:active{background:var(--panel2)}
-  .sess .info{flex:1; min-width:0}
-  .sess .name{font-size:15px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
-  .sess .sub{font-size:11.5px; color:var(--dim)}
-  .badge{font-size:11px; padding:2px 8px; border-radius:8px; flex:none}
-  .badge.run{background:rgba(232,163,61,.15); color:var(--warn)}
-  .badge.done{background:rgba(52,199,123,.12); color:var(--ok)}
-  .badge.err{background:rgba(229,83,75,.12); color:var(--err)}
-  .newSess{display:block; width:calc(100% - 36px); margin:10px 18px; padding:12px;
-    background:var(--accent); color:#fff; border:none; border-radius:12px; font-size:15px; font-weight:600}
+  /* ---- pairing (fullscreen; visible by default so a JS failure never
+       leaves a black page — JS hides it on enterApp) ---- */
+  #pair{display:flex; flex-direction:column; justify-content:center; gap:18px;
+    padding:32px 28px; height:100%; max-width:420px; margin:0 auto}
+  #pair h1{font-size:24px; margin:0; text-align:center}
+  #pair p.sub{color:var(--dim); text-align:center; margin:0 0 8px}
+  #pair input{background:var(--panel); border:1px solid var(--line); color:var(--fg);
+    border-radius:12px; padding:14px 16px; font-size:22px; text-align:center;
+    letter-spacing:8px; outline:none}
+  #pair input:focus{border-color:var(--accent)}
+  #pair button{background:var(--accent); color:#fff; border:none; border-radius:12px;
+    padding:14px; font-size:17px; font-weight:600; font-family:inherit}
+  #pair button:active{opacity:.8}
+  #pairErr{color:var(--err); text-align:center; min-height:20px; font-size:14px}
+
+  /* ---- mobile: sidebar becomes an overlay drawer ---- */
+  #sbBk{display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:30}
+  @media (max-width:860px){
+    #sidebar{position:fixed; left:0; top:0; bottom:0; z-index:31;
+      transform:translateX(-100%); transition:transform .22s ease;
+      box-shadow:8px 0 30px rgba(0,0,0,.4)}
+    #sidebar.open{transform:translateX(0)}
+    #sbBk.show{display:block}
+    #menuBtn{display:block}
+    #msgs{padding:14px 12px}
+  }
 </style>
 </head>
 <body>
-<div id="app">
 
-  <!-- pairing -->
-  <div id="pair">
-    <h1>DSH Remote</h1>
-    <p class="sub">连接到 ZBook 上的 DeepSeek Harness</p>
-    <input id="pinInput" type="tel" inputmode="numeric" maxlength="6" placeholder="••••••" autocomplete="off">
-    <button id="pairBtn">配对</button>
-    <div id="pairErr"></div>
-  </div>
+<!-- pairing -->
+<div id="pair">
+  <h1>DSH</h1>
+  <p class="sub">连接到 ZBook 上的 DeepSeek Harness</p>
+  <input id="pinInput" type="tel" inputmode="numeric" maxlength="6" placeholder="••••••" autocomplete="off">
+  <button id="pairBtn">配对</button>
+  <div id="pairErr"></div>
+  <div id="diag" style="font:11px/1.7 ui-monospace,monospace;color:var(--dimmer);text-align:left;margin-top:8px"></div>
+</div>
 
-  <!-- chat -->
-  <div id="chat">
-    <header>
-      <button id="backBtn" style="display:none">‹ 返回</button>
-      <div id="statusDot"></div>
-      <div class="title" id="sessTitle">
-        <div class="t1">DSH</div>
-        <div class="t2" id="connState">连接中…</div>
+<!-- app shell -->
+<div id="shell" style="display:none">
+  <div id="sbBk"></div>
+  <nav id="sidebar">
+    <div id="sbHead">
+      <div class="brand"><span class="logo">D</span> DSH Remote</div>
+      <button id="newChatBtn">＋ 新建会话</button>
+    </div>
+    <div id="sbList"><div class="hint">加载中…</div></div>
+  </nav>
+  <main id="main">
+    <div id="topbar">
+      <button id="menuBtn">☰</button>
+      <div id="topTitle">
+        <div class="t1" id="topT1">DSH</div>
+        <div id="topConn"><span id="topDot"></span><span id="connText">连接中…</span></div>
       </div>
-      <button id="sessBtn">会话</button>
-    </header>
+    </div>
     <div id="msgs"></div>
-    <footer>
+    <div id="composer">
       <div id="inputRow">
         <textarea id="promptInput" rows="1" placeholder="发消息…"></textarea>
         <button id="sendBtn">↑</button>
       </div>
-    </footer>
-  </div>
-
-  <!-- sheet -->
-  <div id="sheetBk"></div>
-  <div id="sheet">
-    <h3 id="sheetTitle">会话</h3>
-    <div id="sessList"></div>
-    <button class="newSess" id="newSessBtn">＋ 新会话</button>
-  </div>
+    </div>
+  </main>
 </div>
 
 <script>
 "use strict";
+/* global error surface: any uncaught error is painted on screen so a
+   black page always tells us why */
+window.addEventListener("error", (e) => {
+  try {
+    let box = document.getElementById("__errbox");
+    if (!box) {
+      box = document.createElement("div");
+      box.id = "__errbox";
+      box.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99;background:#5c1a17;color:#ffd9d6;padding:10px 14px;font:12px/1.5 ui-monospace,monospace;white-space:pre-wrap;max-height:45vh;overflow:auto";
+      (document.body || document.documentElement).appendChild(box);
+    }
+    box.textContent += "[error] " + (e.message || "unknown") +
+      (e.filename ? " @ " + e.filename.split("/").pop() + ":" + e.lineno : "") + "\n";
+  } catch (_) { /* nothing more we can do */ }
+});
+window.addEventListener("unhandledrejection", (e) => {
+  try {
+    let box = document.getElementById("__errbox");
+    if (!box) {
+      box = document.createElement("div");
+      box.id = "__errbox";
+      box.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99;background:#5c1a17;color:#ffd9d6;padding:10px 14px;font:12px/1.5 ui-monospace,monospace;white-space:pre-wrap;max-height:45vh;overflow:auto";
+      (document.body || document.documentElement).appendChild(box);
+    }
+    const r = e.reason;
+    box.textContent += "[promise] " + ((r && (r.stack || r.message)) || String(r)).slice(0, 400) + "\n";
+  } catch (_) { }
+});
+
 /* ================= config ================= */
 const ABLY_KEY = "OqFv1g.0TNSMQ:iYNFmDSogB4GlqqofDf-TZBWF076rCEFzqKV6NYpAd4";
 const CH_REQ = "dsh-ios-req";
@@ -188,7 +240,7 @@ async function ablyPublish(data) {
     [{ name: "m", data: JSON.stringify(data) }]);
 }
 
-/* reply-waiter registry (dispatched from the poll loop) */
+/* reply-waiter registry */
 const replyWaiters = {};
 function waitReply(reqId, timeoutMs = 25000) {
   return new Promise(resolve => {
@@ -196,7 +248,44 @@ function waitReply(reqId, timeoutMs = 25000) {
     setTimeout(() => { if (replyWaiters[reqId]) { delete replyWaiters[reqId]; resolve(null); } }, timeoutMs);
   });
 }
+
+/* ---------- transport layer: local bridge API first, Ably fallback ----------
+   On the ZBook (testing) the local API at :17891 is the fastest, most
+   reliable path; on iPhone, Ably is the only route. Detect once at boot. */
+let localBase = null;   // e.g. "http://localhost:17891" when reachable
+async function detectLocalBridge() {
+  for (const base of ["http://localhost:17891", "http://127.0.0.1:17891"]) {
+    try {
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), 2500);
+      const r = await fetch(base + "/api/ping", { signal: ctl.signal });
+      clearTimeout(t);
+      if (r.ok) { localBase = base; return true; }
+    } catch (e) { /* try next */ }
+  }
+  return false;
+}
+
+/* one request/response round trip through whichever transport is active */
 async function bridgeCall(kind, extra = {}, timeoutMs = 25000) {
+  if (localBase) {
+    try {
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), timeoutMs);
+      const r = await fetch(localBase + "/api", {
+        method: "POST", signal: ctl.signal,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind, pairToken: store.pairToken, ...extra }),
+      });
+      clearTimeout(t);
+      const j = await r.json();
+      return j && Object.keys(j).length ? j : { ok: false, error: "empty local reply" };
+    } catch (e) {
+      // local transport died; fall back to Ably for this call and re-detect later
+      localBase = null;
+      detectLocalBridge();
+    }
+  }
   const id = "req-" + crypto.randomUUID();
   const p = waitReply(id, timeoutMs);
   const r = await ablyPublish({ id, kind, pairToken: store.pairToken, ...extra });
@@ -249,19 +338,19 @@ const store = {
   set active(v) { v ? localStorage.setItem("dsh_active", v) : localStorage.removeItem("dsh_active"); },
 };
 
-let activeSession = "";      // session id whose conversation is open
-let view = "list";           // list | detail
-let live = null;             // in-flight turn {taskId, prompt, thinking, text, el}
-let knownTasks = {};         // taskId -> true (for session_sync)
+let activeSession = "";
+let live = null;
+let knownTasks = {};
 let syncTimer = null;
 let busy = false;
+let convCache = [];   // sidebar list cache
 
 const $ = (id) => document.getElementById(id);
 
 /* ================= ui helpers ================= */
 function setStatus(ok) {
-  $("statusDot").classList.toggle("ok", ok);
-  $("connState").textContent = busy ? "任务运行中…" : (ok ? "已连接" : "连接断开");
+  $("topDot").classList.toggle("ok", ok);
+  $("connText").textContent = busy ? "任务运行中…" : (ok ? "已连接" : "连接断开");
 }
 function escapeHtml(s) { return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 function mdLite(s) {
@@ -363,59 +452,61 @@ function addToolLine(name) {
   el.wrap.insertBefore(d, el.typing);
   scrollBottom();
 }
+function openDrawer(open) {
+  $("sidebar").classList.toggle("open", open);
+  $("sbBk").classList.toggle("show", open);
+}
 
-/* ================= session list view ================= */
-async function loadSessions() {
-  view = "list";
-  activeSession = "";
-  $("backBtn").style.display = "none";
-  $("sessTitle").querySelector(".t1").textContent = "会话";
-  $("sessTitle").querySelector(".t2").textContent = "选择一个会话,或直接发消息开始新任务";
-  $("msgs").innerHTML = `<div style="color:var(--dim);text-align:center;padding:20px">加载中…</div>`;
+/* ================= sidebar (conversation list) ================= */
+async function loadSidebar() {
+  $("sbList").innerHTML = '<div class="hint">加载中…</div>';
   const r = await bridgeCall("sessions");
-  $("msgs").innerHTML = "";
+  const list = $("sbList");
   if (!r || !r.ok) {
-    addErr((r && r.error) || "会话列表拉取失败");
+    list.innerHTML = `<div class="hint">${escapeHtml((r && r.error) || "列表加载失败")}</div>`;
     return;
   }
-  if (!r.sessions.length) {
-    $("msgs").innerHTML = `<div style="color:var(--dim);text-align:center;padding:40px 20px">
-      还没有对话<br><br>点右下角 ↑ 发起第一个任务</div>`;
+  convCache = r.sessions || [];
+  list.innerHTML = "";
+  if (!convCache.length) {
+    list.innerHTML = '<div class="hint">还没有对话<br>点「＋ 新建会话」开始</div>';
     return;
   }
-  for (const sess of r.sessions) {
-    const row = document.createElement("div");
-    row.className = "sess";
-    const badge = sess.running
-      ? '<span class="badge run">运行中</span>'
-      : '<span class="badge done">完成</span>';
-    const when = sess.lastTs ? new Date(sess.lastTs * 1000).toLocaleString() : "";
-    row.innerHTML = `<div class="info">
-        <div class="name">${escapeHtml(sess.title || sess.session.slice(0, 24))}</div>
-        <div class="sub">${when} · ${sess.tasks.length} 个任务</div>
-      </div>${badge}`;
-    row.onclick = () => openSession(sess.session);
-    $("msgs").appendChild(row);
+  for (const s of convCache) {
+    const item = document.createElement("div");
+    item.className = "convItem" + (s.session === activeSession ? " active" : "");
+    const when = s.lastTs ? new Date(s.lastTs * 1000).toLocaleString() : "";
+    const dot = s.running ? '<span class="dotRun"></span>' : '<span class="dotOk"></span>';
+    item.innerHTML = `<div class="cTitle">${escapeHtml(s.title || s.session.slice(0, 24))}</div>
+      <div class="cSub">${dot}<span>${when} · ${s.tasks.length} 任务</span></div>`;
+    item.onclick = () => { openDrawer(false); openSession(s.session); };
+    list.appendChild(item);
   }
 }
 
-/* ================= session detail view ================= */
+/* ================= conversation view ================= */
 async function openSession(sid) {
-  view = "detail";
   activeSession = sid;
   store.active = sid;
-  $("backBtn").style.display = "";
-  $("msgs").innerHTML = `<div style="color:var(--dim);text-align:center;padding:20px">加载对话历史…</div>`;
+  $("topT1").textContent = "加载中…";
+  $("msgs").innerHTML = `<div class="hint">加载对话历史…</div>`;
+  loadSidebar();  // refresh active highlight
   const r = await bridgeCall("session_events", { sessionId: sid }, 60000);
   $("msgs").innerHTML = "";
   if (!r || !r.ok) {
+    if (r && /unknown session/i.test(r.error || "")) {
+      store.active = ""; activeSession = "";
+      $("topT1").textContent = "DSH";
+      $("msgs").innerHTML = `<div class="hint">会话不存在(可能已过期)<br>从左侧选择其他会话</div>`;
+      return;
+    }
     addErr((r && r.error) || "加载失败");
     return;
   }
-  $("sessTitle").querySelector(".t1").textContent =
-    ((r.turns[0] && r.turns[0].prompt) || sid.slice(0, 20)).slice(0, 30);
+  $("topT1").textContent =
+    ((r.turns[0] && r.turns[0].prompt) || sid.slice(0, 20)).slice(0, 40);
   if (!r.turns.length) {
-    $("msgs").innerHTML = `<div style="color:var(--dim);text-align:center;padding:40px 20px">空会话,发第一条消息吧</div>`;
+    $("msgs").innerHTML = `<div class="hint">空会话,发第一条消息吧</div>`;
   }
   let runningTurn = null;
   for (const turn of r.turns) {
@@ -427,7 +518,7 @@ async function openSession(sid) {
       live = { taskId: turn.taskId, prompt: turn.prompt,
                thinking: turn.thinking || "", text: turn.text || "", finalText: null, el: null };
       busy = true;
-      continue;   // live view attaches below
+      continue;
     }
     renderFinishedTurn(turn);
   }
@@ -441,7 +532,6 @@ async function openSession(sid) {
   scrollBottom();
   startSync();
 }
-
 function renderFinishedTurn(turn) {
   if (turn.thinking) {
     const t = document.createElement("div");
@@ -451,9 +541,7 @@ function renderFinishedTurn(turn) {
   }
   const text = turn.final || turn.text || "（无回复）";
   addMsg("assistant", mdLite(text));
-  if (turn.status === "error") {
-    addErr("该任务未正常完成");
-  }
+  if (turn.status === "error") addErr("该任务未正常完成");
   if (turn.tools && turn.tools.length) {
     const meta = document.createElement("div");
     meta.className = "meta";
@@ -461,47 +549,63 @@ function renderFinishedTurn(turn) {
     $("msgs").appendChild(meta);
   }
 }
-
-/* light periodic sync for the open session */
 function startSync() {
   stopSync();
-  syncTimer = setInterval(async () => {
-    if (view !== "detail" || !activeSession) return;
-    try {
-      const r = await bridgeCall("session_sync",
-        { sessionId: activeSession, knownTasks: Object.keys(knownTasks) }, 15000);
-      if (!r || !r.ok) return;
-      let changed = false;
-      for (const f of (r.newFinished || [])) {
-        knownTasks[f.taskId] = true;
-        if (live && live.taskId === f.taskId) {
-          live.finalText = f.final || live.text;
-          finishLive();
-          busy = false; live = null;
-          $("sendBtn").disabled = false; $("sendBtn").classList.remove("busy");
-          changed = true;
-        }
-      }
-      if (!r.running && busy) {
-        // task ended but no final seen: pull the full conversation tail
-        const full = await bridgeCall("session_events", { sessionId: activeSession }, 60000);
-        if (full && full.ok) {
-          const last = full.turns[full.turns.length - 1];
-          if (last && last.status !== "running") {
-            if (live) { live.finalText = last.final || live.text; finishLive(); live = null; }
-            busy = false;
-            $("sendBtn").disabled = false; $("sendBtn").classList.remove("busy");
-            changed = true;
+  if (localBase) {
+    // local mode: fast 2s event streaming from the task's disk log
+    syncTimer = setInterval(async () => {
+      if (live && live.taskId && localBase) {
+        try {
+          const t = await bridgeCall("tasklog", { taskId: live.taskId }, 15000);
+          if (t && t.ok) {
+            const evs = t.events || [];
+            for (let i = live.evtIdx || 0; i < evs.length; i++) {
+              handleDshEvent(evs[i]);
+            }
+            live.evtIdx = evs.length;
           }
+        } catch (e) { /* next tick */ }
+      }
+    }, 2000);
+  }
+  syncTimer2 = setInterval(runSessionSync, localBase ? 5000 : 10000);
+  runSessionSync();
+}
+let syncTimer2 = null;
+async function runSessionSync() {
+  if (!activeSession) return;
+  try {
+    const r = await bridgeCall("session_sync",
+      { sessionId: activeSession, knownTasks: Object.keys(knownTasks) }, 15000);
+    if (!r || !r.ok) return;
+    for (const f of (r.newFinished || [])) {
+      knownTasks[f.taskId] = true;
+      if (live && live.taskId === f.taskId) {
+        live.finalText = f.final || live.text;
+        finishLive();
+        busy = false; live = null;
+        $("sendBtn").disabled = false; $("sendBtn").classList.remove("busy");
+      }
+    }
+    if (!r.running && busy) {
+      const full = await bridgeCall("session_events", { sessionId: activeSession }, 60000);
+      if (full && full.ok) {
+        const last = full.turns[full.turns.length - 1];
+        if (last && last.status !== "running") {
+          if (live) { live.finalText = last.final || live.text; finishLive(); live = null; }
+          busy = false;
+          $("sendBtn").disabled = false; $("sendBtn").classList.remove("busy");
         }
       }
-      if (changed) setStatus(true);
-    } catch (e) { /* next tick */ }
-  }, 10000);
+    }
+  } catch (e) { /* next tick */ }
 }
-function stopSync() { if (syncTimer) { clearInterval(syncTimer); syncTimer = null; } }
+function stopSync() {
+  if (syncTimer) { clearInterval(syncTimer); syncTimer = null; }
+  if (syncTimer2) { clearInterval(syncTimer2); syncTimer2 = null; }
+}
 
-/* ================= frames from the channel ================= */
+/* ================= frames ================= */
 function onFrame(d) {
   if (d.ok !== undefined && replyWaiters[d.id]) {
     const w = replyWaiters[d.id];
@@ -518,7 +622,6 @@ function onFrame(d) {
     $("sendBtn").disabled = false; $("sendBtn").classList.remove("busy");
   }
 }
-
 function handleDshEvent(ev) {
   if (!live) return;
   const t = ev.type;
@@ -539,6 +642,7 @@ function handleDshEvent(ev) {
     live = null; busy = false;
     $("sendBtn").disabled = false; $("sendBtn").classList.remove("busy");
     setStatus(true);
+    loadSidebar();
   } else if (t === "error") {
     addErr(ev.message || "error");
     finishLive(); live = null; busy = false;
@@ -553,12 +657,9 @@ async function sendPrompt() {
   if (!text) return;
   $("promptInput").value = "";
   $("promptInput").style.height = "auto";
-  if (view === "list") {
-    view = "detail"; activeSession = "";
+  if (!activeSession) {
     $("msgs").innerHTML = "";
-    $("backBtn").style.display = "";
-    $("sessTitle").querySelector(".t1").textContent = "新会话";
-    $("sessTitle").querySelector(".t2").textContent = "";
+    $("topT1").textContent = "新会话";
   }
   addUserMsg(text);
   busy = true;
@@ -577,26 +678,65 @@ async function sendPrompt() {
   }
   if (r.taskId) { live.taskId = r.taskId; knownTasks[r.taskId] = true; }
   if (r.sessionId && !activeSession) { activeSession = r.sessionId; store.active = r.sessionId; }
+  startSync();   // ensure the event streamer is running for this live task
 }
 
 /* ================= pairing / refresh / boot ================= */
+/* connectivity self-test shown on the pairing screen */
+(async function diag() {
+  const el = document.getElementById("diag");
+  const log = (s) => { el.textContent += s + "\n"; };
+  const t0 = performance.now();
+  try {
+    const r = await fetch("https://rest.ably.io/time", {
+      headers: { "Authorization": "Basic " + btoa(ABLY_KEY) } });
+    log(`ably REST: HTTP ${r.status} (${Math.round(performance.now() - t0)}ms)`);
+  } catch (e) {
+    log(`ably REST: FAILED — ${e.message}`);
+    log("(公司网络需走代理;浏览器若未使用系统代理会失败)");
+  }
+  try {
+    if (navigator.onLine) log("browser: online");
+    else log("browser: OFFLINE");
+  } catch (e) {}
+})();
+
 async function doPair() {
   const pin = $("pinInput").value.trim();
   $("pairErr").textContent = "";
   if (!/^\d{6}$/.test(pin)) { $("pairErr").textContent = "请输入 6 位 PIN"; return; }
+  // local transport: direct HTTP round trip (no Ably at all)
+  if (localBase) {
+    try {
+      const r = await fetch(localBase + "/api", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: "pair-local", kind: "pair", pin, local: true }),
+      });
+      const resp = await r.json();
+      if (!resp || !resp.ok) { $("pairErr").textContent = (resp && resp.error) || "配对失败"; return; }
+      store.pairToken = resp.pairToken;
+      store.ablyToken = resp.ablyToken || "";
+      if (resp.respChannel) store.respChannel = resp.respChannel;
+      enterApp();
+      return;
+    } catch (e) {
+      $("pairErr").textContent = "本地桥连不上: " + e.message;
+      return;
+    }
+  }
   const nonce = crypto.getRandomValues(new Uint8Array(16)).reduce(
     (s, b) => s + b.toString(16).padStart(2, "0"), "");
   const pairCh = `dsh-ios-pair-${nonce}`;
   const id = "req-" + crypto.randomUUID();
   const r = await ablyPublish({ id, kind: "pair", pin, nonce });
-  if (!r.ok) { $("pairErr").textContent = "网络错误: " + r.status; return; }
+  if (!r.ok) { $("pairErr").textContent = "网络错误: HTTP " + r.status + "(详见下方诊断)"; return; }
   const resp = await pollChannelFor(pairCh, m => m.id === id, 25000);
-  if (!resp) { $("pairErr").textContent = "配对超时,请确认 ZBook 在线"; return; }
+  if (!resp) { $("pairErr").textContent = "配对超时: 请求已发出但 25 秒内无响应(桥可能不在线)"; return; }
   if (!resp.ok) { $("pairErr").textContent = resp.error || "配对失败"; return; }
   store.pairToken = resp.pairToken;
   store.ablyToken = resp.ablyToken;
   if (resp.respChannel) store.respChannel = resp.respChannel;
-  enterChat();
+  enterApp();
 }
 async function pollChannelFor(channel, match, timeoutMs) {
   const t0 = Date.now();
@@ -617,6 +757,25 @@ async function pollChannelFor(channel, match, timeoutMs) {
 }
 async function verifyPairing() {
   if (!store.pairToken) return false;
+  // local transport: verify directly
+  if (localBase) {
+    try {
+      const r = await fetch(localBase + "/api", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: "verify-local", kind: "ping", pairToken: store.pairToken }),
+      });
+      const resp = await r.json();
+      if (resp && resp.ok === false) {
+        store.pairToken = ""; store.ablyToken = ""; store.respChannel = "";
+        return false;
+      }
+      if (resp && resp.ablyToken) store.ablyToken = resp.ablyToken;
+      return true;
+    } catch (e) {
+      // local bridge vanished: fall through to Ably path
+      localBase = null;
+    }
+  }
   const nonce = crypto.getRandomValues(new Uint8Array(16)).reduce(
     (s, b) => s + b.toString(16).padStart(2, "0"), "");
   const pairCh = `dsh-ios-pair-${nonce}`;
@@ -674,22 +833,28 @@ function unpair() {
   stopPolling(); stopSync();
   store.pairToken = ""; store.ablyToken = ""; store.respChannel = "";
   ablyCred = () => "Basic " + btoa(ABLY_KEY);
-  $("chat").style.display = "none";
+  $("shell").style.display = "none";
   $("pair").style.display = "flex";
   $("pairErr").textContent = "连接已失效,请重新配对";
 }
-function enterChat() {
+function enterApp() {
   $("pair").style.display = "none";
-  $("chat").style.display = "flex";
-  if (store.ablyToken) {
-    ablyCred = () => "Bearer " + store.ablyToken;
-    if (store.respChannel) CH_RESP = store.respChannel;
-    scheduleRefresh();
+  $("shell").style.display = "flex";
+  if (localBase) {
+    // local transport: no Ably polling; the disk-backed session sync loop
+    // and session_events replays carry all state
+    setStatus(true);
+  } else {
+    if (store.ablyToken) {
+      ablyCred = () => "Bearer " + store.ablyToken;
+      if (store.respChannel) CH_RESP = store.respChannel;
+      scheduleRefresh();
+    }
+    startPolling();
   }
-  startPolling();
-  // server-side view: a page refresh loses nothing, history replays from disk
+  loadSidebar();
   if (store.active) openSession(store.active);
-  else loadSessions();
+  else $("msgs").innerHTML = `<div class="hint">从左侧选择一个会话<br>或点「＋ 新建会话」</div>`;
 }
 
 /* ================= wiring ================= */
@@ -701,44 +866,41 @@ $("promptInput").addEventListener("keydown", e => {
 });
 $("promptInput").addEventListener("input", e => {
   e.target.style.height = "auto";
-  e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px";
+  e.target.style.height = Math.min(e.target.scrollHeight, 140) + "px";
 });
-$("backBtn").onclick = () => { stopSync(); loadSessions(); };
-$("sessBtn").onclick = () => { stopSync(); loadSessions(); showSheet(); };
-$("newSessBtn").onclick = () => {
-  hideSheet();
-  view = "detail"; activeSession = ""; store.active = "";
-  $("backBtn").style.display = "";
+$("menuBtn").onclick = () => openDrawer(true);
+$("sbBk").onclick = () => openDrawer(false);
+$("newChatBtn").onclick = () => {
+  openDrawer(false);
+  stopSync();
+  activeSession = ""; store.active = "";
+  knownTasks = {};
+  live = null; busy = false;
   $("msgs").innerHTML = "";
-  $("sessTitle").querySelector(".t1").textContent = "新会话";
-  $("sessTitle").querySelector(".t2").textContent = "";
+  $("topT1").textContent = "新会话";
+  $("sendBtn").disabled = false; $("sendBtn").classList.remove("busy");
+  loadSidebar();
+  $("promptInput").focus();
 };
-function showSheet() {
-  $("sheetBk").style.display = "block";
-  $("sheet").style.display = "block";
-}
-function hideSheet() { $("sheetBk").style.display = "none"; $("sheet").style.display = "none"; }
-$("sheetBk").onclick = hideSheet;
 
-// wake from iOS suspension: re-poll immediately; missed frames are re-read
-// from disk via session_events/session_sync on the next view refresh
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") {
     if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
-    if ($("chat").style.display === "flex") startPolling();
-    // also re-sync the open session right away
-    if (view === "detail" && activeSession && syncTimer) {
-      // trigger an immediate sync tick by restarting the interval
-      stopSync(); startSync();
-    }
+    if ($("shell").style.display === "flex") startPolling();
   }
 });
 
-// boot
 (async () => {
-  if (!store.pairToken) return;
+  await detectLocalBridge();
+  const diagEl = document.getElementById("diag");
+  if (diagEl && localBase) diagEl.textContent += "local bridge: 已直连 " + localBase + "\n";
+  if (!store.pairToken) {
+    // first visit (or cleared credentials): show the pairing screen
+    $("pair").style.display = "flex";
+    return;
+  }
   const ok = await verifyPairing();
-  if (ok) enterChat();
+  if (ok) enterApp();
   else $("pair").style.display = "flex";
 })();
 </script>
