@@ -554,18 +554,21 @@ function startSync() {
   if (localBase) {
     // local mode: fast 2s event streaming from the task's disk log
     syncTimer = setInterval(async () => {
-      if (live && live.taskId && localBase) {
-        try {
-          const t = await bridgeCall("tasklog", { taskId: live.taskId }, 15000);
-          if (t && t.ok) {
-            const evs = t.events || [];
-            for (let i = live.evtIdx || 0; i < evs.length; i++) {
-              handleDshEvent(evs[i]);
-            }
-            live.evtIdx = evs.length;
+      // capture the CURRENT task; discard the reply if the live task
+      // changed while this round trip was in flight (stale-frame guard)
+      const tid = live && live.taskId;
+      if (!tid || !localBase) return;
+      try {
+        const t = await bridgeCall("tasklog", { taskId: tid }, 15000);
+        if (t && t.ok) {
+          if (!live || live.taskId !== tid) return;   // stale frame
+          const evs = t.events || [];
+          for (let i = live.evtIdx || 0; i < evs.length; i++) {
+            handleDshEvent(evs[i]);
           }
-        } catch (e) { /* next tick */ }
-      }
+          if (live) live.evtIdx = evs.length;
+        }
+      } catch (e) { /* next tick */ }
     }, 2000);
   }
   syncTimer2 = setInterval(runSessionSync, localBase ? 5000 : 10000);
@@ -575,14 +578,15 @@ let syncTimer2 = null;
 async function runSessionSync() {
   // universal fallback: if the live task is terminal on disk, release the UI
   if (busy && live && live.taskId) {
+    const tid = live.taskId;   // guard: reply must still match the live task
     try {
-      const t = await bridgeCall("tasklog", { taskId: live.taskId }, 15000);
-      if (t && t.ok && t.status === "done") {
+      const t = await bridgeCall("tasklog", { taskId: tid }, 15000);
+      if (live && live.taskId === tid && t && t.ok && t.status === "done") {
         live.finalText = t.final || live.text || "";
         releaseBusy();
         return;
       }
-      if (t && t.ok && t.status === "error") {
+      if (live && live.taskId === tid && t && t.ok && t.status === "error") {
         addErr("任务失败");
         releaseBusy();
         return;
@@ -630,6 +634,9 @@ function onFrame(d) {
     return;
   }
   if (!live) return;
+  // stale-frame guard: only feed frames belonging to the live task's
+  // originating request (prevents cross-turn bleeding on quick turns)
+  if (live.reqId && d.id && d.id !== live.reqId) return;
   if (d.evt === "dsh") handleDshEvent(d.d);
   else if (d.evt === "error") {
     addErr(d.message || "error");
@@ -683,10 +690,11 @@ async function sendPrompt() {
   addUserMsg(text);
   busy = true;
   $("sendBtn").disabled = true; $("sendBtn").classList.add("busy");
-  live = { taskId: null, prompt: text, thinking: "", text: "", finalText: null, el: null };
+  const myReqId = "req-" + crypto.randomUUID();   // binds live frames to this turn
+  live = { taskId: null, reqId: myReqId, prompt: text, thinking: "", text: "", finalText: null, el: null };
   ensureLive(); setStatus(true);
 
-  const payload = { kind: "prompt", prompt: text };
+  const payload = { id: myReqId, kind: "prompt", prompt: text };
   if (activeSession) payload.sessionId = activeSession;
   const r = await bridgeCall("prompt", payload);
   if (!r || !r.ok) {
