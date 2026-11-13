@@ -573,6 +573,22 @@ function startSync() {
 }
 let syncTimer2 = null;
 async function runSessionSync() {
+  // universal fallback: if the live task is terminal on disk, release the UI
+  if (busy && live && live.taskId) {
+    try {
+      const t = await bridgeCall("tasklog", { taskId: live.taskId }, 15000);
+      if (t && t.ok && t.status === "done") {
+        live.finalText = t.final || live.text || "";
+        releaseBusy();
+        return;
+      }
+      if (t && t.ok && t.status === "error") {
+        addErr("任务失败");
+        releaseBusy();
+        return;
+      }
+    } catch (e) { /* fall through */ }
+  }
   if (!activeSession) return;
   try {
     const r = await bridgeCall("session_sync",
@@ -622,6 +638,14 @@ function onFrame(d) {
     $("sendBtn").disabled = false; $("sendBtn").classList.remove("busy");
   }
 }
+function releaseBusy() {
+  if (live) { live.finalText = live.finalText || live.text; finishLive(); live = null; }
+  busy = false;
+  $("sendBtn").disabled = false;
+  $("sendBtn").classList.remove("busy");
+  setStatus(true);
+  loadSidebar();
+}
 function handleDshEvent(ev) {
   if (!live) return;
   const t = ev.type;
@@ -638,15 +662,10 @@ function handleDshEvent(ev) {
   } else if (t === "final") {
     live.finalText = ev.text || live.text;
     if (live.taskId) knownTasks[live.taskId] = true;
-    finishLive();
-    live = null; busy = false;
-    $("sendBtn").disabled = false; $("sendBtn").classList.remove("busy");
-    setStatus(true);
-    loadSidebar();
+    releaseBusy();
   } else if (t === "error") {
     addErr(ev.message || "error");
-    finishLive(); live = null; busy = false;
-    $("sendBtn").disabled = false; $("sendBtn").classList.remove("busy");
+    releaseBusy();
   }
 }
 
